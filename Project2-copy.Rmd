@@ -1,0 +1,287 @@
+---
+title: 'Project 2: Modeling, Testing, and Predicting'
+author: "SDS348 Fall 2019"
+date: '11/26/19'
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+hook_output = knit_hooks$get('output')
+knit_hooks$set(output = function(x, options) {
+  # this hook is used only when the linewidth option is not NULL
+  if (!is.null(n <- options$linewidth)) {
+    x = knitr:::split_lines(x)
+    # any lines wider than n should be wrapped
+    if (any(nchar(x) > n)) x = strwrap(x, width = n)
+    x = paste(x, collapse = '\n')
+  }
+  hook_output(x, options)
+})
+
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE,fig.align="center",warning=FALSE,message=FALSE,fig.width=8, fig.height=5, linewidth=60)
+options(tibble.width = 100,width = 100)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(MASS)
+library(lmtest)
+library(sandwich)
+Backpack <- read.csv("~/Backpack.csv")
+Backpack <- Backpack%>%dplyr::select(-c("X"))
+```
+
+# Amber Nguyen aqn246
+
+## Introduction
+
+The dataset that I am using for this project is called the Weights of College Students Backpacks. It includes 9 total variables with 100 observations, but the main variables I will be working with are BackpackWeight, BodyWeight, Ratio, BackProblems, Sex, and Year. BackpackWeight is a measure of each student's backpack weight in pounds. BodyWeight is a measure of each student's body weight in pounds. Ratio is the ratio of backpack weight to body weight. BackProblems is a binary variable of whether a student has back problems or not, with 0 being no and 1 being yes. Sex is the student's sex and Year is the student's year in college. The reason I chose this dataset was because I thought it would be interesting to see if backpack weight has any effect on a college student's back problems. 
+
+
+## 1. MANOVA Test
+
+- **1. (15 pts)** Perform a MANOVA testing whether any of your numeric variables (or a subset of them, if including them all doesn't make sense) show a mean difference across levels of one of your categorical variables (3). If they do, perform univariate ANOVAs to find response(s) showing a mean difference across groups (3), and perform post-hoc t tests to find which groups differ (3). Discuss the number of tests you have performed, calculate the probability of at least one type I error (if unadjusted), and adjust the significance level accordingly (bonferroni correction) before discussing significant differences (3). Briefly discuss assumptions and whether or not they are likely to have been met (2).
+
+```{R}
+mantest <- manova(cbind(BackpackWeight,BodyWeight,Ratio)~BackProblems,data=Backpack)
+summary(mantest)
+summary.aov(mantest) 
+1-.95^4 ## Probability of Type-1 Error
+```
+The MANOVA test was not significant, thus, for BackpackWeight, BodyWeight, and Ratio, means for students with or without Back Problems did not differ. If the MANOVA test was significant, then I would have performed 4 total tests. 1 MANOVA, 3 univariate ANOVAs, and no t-tests, since my categorical variable only has 2 levels. Lastly, the probability of performing at least one Type-1 Error was 0.1855. There are many assumptions with a MANOVA including: 1. Random samples, independent observations, 2. Multivariate normality, 3. Homogeneity of within-group covariance matrices, 4. Linear relationships among dependent variables, 5. No extreme outliers, and 6. No multicollinearity. I believe that most of the assumptions have been met with the data, as it includes random, independent data. I believe that the variables do not contain any outliers and they are not too correlated, but I am unsure about the covariance matrices, linear relationships and normality. I think it should be formally tested in order to confirm the assumptions as it is usually hard to meet all of these assumptions. 
+
+## 2. Randomization Test
+
+- **2. (10 pts)** Perform some kind of randomization test on your data (that makes sense). This can be anything you want! State null and alternative hypotheses, perform the test, and interpret the results (7). Create a plot visualizing the null distribution and the test statistic (3).
+
+```{R}
+summary(aov(Ratio~BackProblems,data=Backpack))
+
+## Randomization One-Way ANOVA 
+obs_F <- 3.391
+Fs <- replicate(5000, {
+newBP <- Backpack %>% mutate(Ratio = sample(Ratio))
+SSW <- newBP %>% group_by(BackProblems) %>% summarize(SSW = sum((Ratio -
+mean(Ratio))^2)) %>% summarize(sum(SSW)) %>% pull
+SSB <- newBP %>% mutate(mean = mean(Ratio)) %>% group_by(BackProblems) %>%
+mutate(groupmean = mean(Ratio)) %>% summarize(SSB = sum((mean -
+groupmean)^2)) %>% summarize(sum(SSB)) %>% pull
+(SSB/1)/(SSW/98)
+})
+
+## Calculated SSB and SSW and F-Value by hand
+SSB <- Backpack %>% mutate(mean = mean(Ratio)) %>% group_by(BackProblems) %>%
+mutate(groupmean = mean(Ratio)) %>% summarize(SSB = sum((mean -
+groupmean)^2)) %>% summarize(sum(SSB)) %>% pull
+SSB
+SSW <- Backpack %>% group_by(BackProblems) %>% summarize(SSW = sum((Ratio -
+mean(Ratio))^2)) %>% summarize(sum(SSW)) %>% pull
+SSW
+(SSB/1)/(SSW/98) ## F-Value
+
+hist(Fs, prob=T); abline(v = obs_F, col="red")
+mean(Fs>obs_F)
+```
+I performed a randomization one-way ANOVA, to see if there were differences in the mean Ratio (backpackweight/bodyweight) between students with back problems and without back problems. This could help me determine if backpack weight is really the cause of back problems. The null hypothesis is that there is no difference between mean Ratios of students with or without Back Problems. The alternative hypothesis is that there is a difference between mean Ratios of students with or without Back Problems. I ran summary(aov) with the two variables for a comparison to my randomization ANOVA, and it gave a p-value of 0.0686 and an F-value of 3.391. The randomization ANOVA gave very similar results and p-value as my summary(aov) with a p-value of 0.0676. Also, I calculated the SSB and SSW by hand to confirm the F-value and that the randomization code was correct. Overall, the test showed that there are no mean differences in the Backpackweight/Bodyweight Ratio of students with or without back problems as the p-value was not less than 0.05. The histogram of the null distribution shows that the F statistic is around 3.5, and most of the means are around 0. Ths histogram shows that there are not a lot of observations to the right (greater than) the F-statistic, confirming that we cannot reject the null hypothesis.
+
+
+## 3. Linear Regression
+
+- **3. (35 pts)** Build a linear regression model predicting one of your response variables from at least 2 other variables, including their interaction. Mean-center any numeric variables involved in the interaction.
+
+    - Interpret the coefficient estimates (do not discuss significance) (10)
+    - Plot the regression using `ggplot()`. If your interaction is numeric by numeric, refer to code near the end of WS15 to make the plot. If you have 3 or more predictors, just chose two to plot for convenience. (7)
+    - Check assumptions of linearity, normality, and homoskedasticity either graphically or using a hypothesis test (3)
+    - Regardless, recompute regression results with robust standard errors via `coeftest(..., vcov=vcovHC(...))`. Discuss significance of results, including any changes from before/after robust SEs if applicable. (7)
+    - What proportion of the variation in the outcome does your model explain? (3)
+
+```{R}
+## Mean-center
+Backpack$BodyWeightM <- Backpack$BodyWeight - mean(Backpack$BodyWeight, na.rm=TRUE)
+
+## Linear regression with interaction
+fit <- lm(BackpackWeight~BackProblems*BodyWeightM, data=Backpack)
+summary(fit)
+Backpack %>% ggplot(aes(BodyWeightM,BackpackWeight,group=BackProblems, color=BackProblems))+geom_point(aes(color=BackProblems))+geom_smooth(method="lm")+ggtitle("Linear Regression of Bodyweight and Backpack Weight")
+
+## Check Assumptions
+resids<-fit$residuals
+fitted<-fit$fitted.values
+ggplot()+geom_point(aes(fitted,resids))+geom_hline(yintercept=0, color='red') # Linearity met, Homoskedasticity not met, points fan out
+ggplot()+geom_histogram(aes(resids), bins=20) # Normality is not good
+shapiro.test(resids) # Confirms that it is non-normal, reject null hypothesis
+
+## Robust Standard Errors
+fit <- lm(BackpackWeight~BackProblems*BodyWeightM, data=Backpack)
+bptest(fit) # this shows that the null hypothesis of homoskedasticity is not rejected. 
+summary(fit) # uncorrect SEs
+coeftest(fit, vcov = vcovHC(fit)) # correct SEs, did not change much, made the p-value for bodyweight to be not significant. 
+```
+Controlling for BackProblems, there is no effect of BodyWeight on Backpackweight. For every one unit increase in BodyWeight, Backpack weight increases 0.041664 pounds on average. Controlling for BodyWeight, there is no difference between the Backpackweight of students with or without BackProblems. Additionally, there is no significant interaction between BackProblems and Bodyweight. Regarding assumptions, linearity was met, but the rest of them (Normality, Homoskedasticity) were not as shown with the data above. I ran a bptest to confirm that homoskedasticity was not met. Then, with the robust SEs, the standard errors got larger, which is not good. The p-value of bodyweight also got larger, making it less significant than before. Lastly, the proportion of variation that my model explains is 0.05732 which is very small, if accounting for penalty for each explanatory variable, then the proportion of variation was 0.02786.
+
+
+## 4. Bootstrapped SEs
+- **4. (5 pts)** Rerun same regression model (with interaction), but this time compute bootstrapped standard errors. Discuss any changes you observe in SEs and p-values using these SEs compared to the original SEs and the robust SEs)
+
+
+```{R}
+sampleb <- replicate(5000, {
+  bootdata <- bootdata<- Backpack[sample(nrow(Backpack), replace=TRUE),]
+  fit <- lm(BackpackWeight~BackProblems*BodyWeightM,data=bootdata)
+  coef(fit)
+})
+
+sampleb%>%t%>%as.data.frame%>%summarize_all(sd)
+```
+The Bootstrapped SEs got smaller for BackProblems, and the interaction between BackProblems and Bodyweight, but it got larger for Bodyweight in comparison to the Robust SEs. When comparing to the original SEs, none of the Bootstrapped SEs got smaller, but they all got larger. This is not a favorable result, and it shows that the original model is the best in terms of standard errors. 
+
+## 5. Logistic Regression
+- **5. (40 pts)** Perform a logistic regression predicting a binary categorical variable (if you don't have one, make/get one) from at least two explanatory variables (interaction not necessary). 
+
+    - Interpret coefficient estimates in context (10)
+    - Report a confusion matrix for your logistic regression (2)
+    - Compute and discuss the Accuracy, Sensitivity (TPR), Specificity (TNR), and Recall (PPV) of your model (5)
+    - Using ggplot, plot density of log-odds (logit) by your binary outcome variable (3)
+    - Generate an ROC curve (plot) and calculate AUC (either manually or with a package); interpret (10)
+    - Perform 10-fold (or repeated random sub-sampling) CV and report average out-of-sample Accuracy, Sensitivity, and Recall (10)
+
+```{R}
+fit2 <- glm(BackProblems~BackpackWeight+Ratio, family="binomial", data=Backpack)
+summary(fit2)
+exp(30.9384)
+
+probbp <- predict(fit2, type = "response") ## predicted probabilities
+
+## Confusion matrix
+pred <- ifelse(probbp>0.5,1,0)
+table(predict=pred,truth=Backpack$BackProblems)%>%addmargins
+(66+4)/100 ## Accuracy 
+4/32 ## Sensitivity (TPR)
+66/68 ## Specificity (TNR)
+4/6 ## Precision (PPV)
+
+## Density plot
+Backpack$BackProblems <- as.factor(Backpack$BackProblems)
+logitbp <- predict(fit2, type="link")
+Backpack %>% ggplot()+geom_density(aes(logitbp,fill=BackProblems),alpha=.4)
+
+## ROC Curve
+data <- Backpack
+data$prob<-predict(fit2,type="response") ## predicted probabilities
+data$BackProblems<-as.factor(data$BackProblems)
+tpr<-function(p)mean(data[data$BackProblems==1,]$prob>p)
+fpr<-function(p)mean(data[data$BackProblems==0,]$prob>p)
+data<-data[order(data$prob),]
+prob<-data$prob
+cuts<-unique(c(0,(prob[-1]+prob[-32])/2,1))
+TPR<-sapply(cuts,tpr)
+FPR<-sapply(cuts,fpr)
+ROC1<-
+ data.frame(cuts,TPR,FPR,TP=TPR*13,FP=FPR*19)%>%
+ arrange(desc(cuts))
+ROCplot <- ggplot(ROC1)+geom_path(aes(FPR,TPR),size=1.5)+geom_segment(aes(x=0,y=0,xend=1,yend=1),lty=2)+
+ scale_x_continuous(limits = c(0,1))
+ROCplot
+## Calculate AUC
+widths<-diff(ROC1$FPR) 
+heights<-(ROC1$TPR[-1]+ROC1$TPR[-length(ROC1$TPR)])/2 
+AUC<-sum(heights*widths) 
+AUC
+
+## 10-Fold CV
+class_diag<-function(probs,truth){
+ tab<-table(factor(probs>.5,levels=c("FALSE","TRUE")),truth)
+ acc=sum(diag(tab))/sum(tab)
+ sens=tab[2,2]/colSums(tab)[2]
+ spec=tab[1,1]/colSums(tab)[1]
+ ppv=tab[2,2]/rowSums(tab)[2]
+ if(is.numeric(truth)==FALSE & is.logical(truth)==FALSE) truth<-as.numeric(truth)-1
+ #CALCULATE EXACT AUC
+ ord<-order(probs, decreasing=TRUE)
+ probs <- probs[ord]; truth <- truth[ord]
+ TPR=cumsum(truth)/max(1,sum(truth))
+ FPR=cumsum(!truth)/max(1,sum(!truth))
+ dup<-c(probs[-1]>=probs[-length(probs)], FALSE)
+ TPR<-c(0,TPR[!dup],1); FPR<-c(0,FPR[!dup],1)
+ n <- length(TPR)
+ auc<- sum( ((TPR[-1]+TPR[-n])/2) * (FPR[-1]-FPR[-n]) )
+ data.frame(acc,sens,spec,ppv,auc)
+} 
+set.seed(1234)
+k=5 # I used 5 instead of 10 because I only have 100 observations
+data1<-data[sample(nrow(data)),] 
+folds<-cut(seq(1:nrow(data)),breaks=k,labels=F) 
+diags<-NULL
+for(i in 1:k){
+
+ train<-data1[folds!=i,]
+ test<-data1[folds==i,]
+ truth<-test$BackProblems
+ 
+ fit3<-glm(BackProblems~BackpackWeight+Ratio,data=train,family="binomial")
+ probs<-predict(fit3,newdata = test,type="response")
+
+ diags<-rbind(diags,class_diag(probs,truth))
+}
+apply(diags,2,mean)
+```
+Controlling for Ratio of Backpackweight/Bodyweight, Backpackweight of students with or without Backproblems is not significantly different. Controlling for BackpackWeight, for every 1-unit increase in Ratio, odds of BackProblems increase by a factor of exp(30.9384)=2.731344e+13. The accuracy shows the proportion of correctly classified cases of 0.7, which is not bad. The sensitivity shows the proportion of students with BackProblems correctly classified at 0.125, which is low and not good. The specificity shows the proportion of students without BackProblems correctly classified at 0.971, which is very high. The precision shows the proportion of students classified with BackProblems who actually are at 0.667, which is okay as well. The AUC was calculated to be 0.652, and this is poor, but it is not bad. This shows how well we are predicting a randomly selected person would have BackProblems versus not having BackProblems. I performed a 5-fold CV instead of a 10-Fold, because I only have 100 observations. After performing a 5-Fold CV, The out-of-sample accuracy was 0.690, the sensitivity was 0.115, and the Recall(ppv) was NaN.
+
+
+## 6. LASSO Regression
+- **6. (10 pts)** Choose one variable you want to predict (can be one you used from before; either binary or continuous) and run a LASSO regression inputting all the rest of your variables as predictors. Choose lambda to give the simplest model whose accuracy is near that of the best (i.e., `lambda.1se`). Discuss which variables are retained. Perform 10-fold CV using this model: if response in binary, compare model's out-of-sample accuracy to that of your logistic regression in part 5; if response is numeric, compare the residual standard error (at the bottom of the summary output, aka RMSE): lower is better fit!
+
+```{R}
+library(glmnet)
+set.seed(1234)
+fit4 <- glm(BackProblems~ -1+BackpackWeight+BodyWeight+Ratio+Units+Sex+Major+Year+Status,data=Backpack,family="binomial")
+y <- as.matrix(Backpack$BackProblems)
+x <- model.matrix(fit4)[,-1]
+x <- scale(x)
+cv<-cv.glmnet(x,y,family="binomial")
+lasso<-glmnet(x,y,family="binomial",lambda=cv$lambda.1se)
+coeftest <- coef(lasso)
+coeftest
+
+## Selecting for Lasso Coefficients
+`%ni%`<-Negate(`%in%`)
+newlasso <-which(coeftest!=0)
+variables<-row.names(coeftest)[newlasso]
+variables<-variables[variables %ni% '(Intercept)'] 
+select <- dplyr::select
+Backpack3 <- x %>% as.data.frame %>% select(variables) %>% mutate(BackProblems = Backpack$BackProblems)
+
+## 10-Fold CV with Lasso
+set.seed(1234)
+k=5 
+data1<-Backpack3[sample(nrow(Backpack)),] 
+folds<-cut(seq(1:nrow(Backpack)),breaks=k,labels=F) 
+diags<-NULL
+for(i in 1:k){
+ train<-data1[folds!=i,]
+ test<-data1[folds==i,]
+ truth<-test$BackProblems
+ 
+ fit<-glm(BackProblems~.,data=train,family="binomial")
+ probs<-predict(fit,newdata = test,type="response")
+
+ diags<-rbind(diags,class_diag(probs,truth))
+}
+diags%>%summarize_all(mean)
+
+
+
+```
+
+The variables that were retained from the Lasso regression were SexFemale and SexMale. The 5-fold CV was done and the accuracy was 0.68. This is 0.01 less than the logistic regression without the lasso selected variables, which is not as good. However, the AUC was larger than the original logisitic regression which is good.
+
+
+
+
